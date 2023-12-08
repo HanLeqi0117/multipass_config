@@ -1,0 +1,92 @@
+description: A development and testing environment for ROS 2 Humble.
+version: 0.1
+
+runs-on:
+- arm64
+- x86_64
+
+instances:
+  ros2-humble-desktop:
+    image: 22.04
+    limits:
+      min-cpu: 6
+      min-mem: 6G
+      min-disk: 60G
+    timeout: 3000
+    cloud-init:
+      vendor-data: |
+        apt:
+          sources:
+            ros2:
+            - source: "deb [arch=arm64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main"
+            - keyserver: https://raw.githubusercontent.com/ros/rosdistro/master/ros.key
+            - key: ros-archive-keyring
+      
+        package_update: true
+        package_upgrade: true
+        
+        packages:
+        - build-essential
+        - cmake
+        - curl
+        - git
+        - lsb-release
+        - openssh-client
+        - openssh-server
+        - python3
+        - python3-pip
+        - snapd
+        - tig
+        - unzip
+        - vim
+        - wget
+        - zip
+        - net-tools
+        - xrdp
+        - ubuntu-desktop
+        # ROS 2 specific packages
+        - ros-humble-desktop-full
+        - python3-colcon-common-extensions
+        - python3-rosdep
+        - python3-setuptools
+        - python3-vcstool
+
+        snap:
+          commands:
+            - snap install snapcraft --classic
+            - snap install multipass-sshfs
+
+        write_files:
+
+        - content: |
+
+            [[ -z "${COLCON_HOME}" ]] && export COLCON_HOME="$HOME/.colcon"
+
+            [[ -z "${XAUTHORITY}" ]] && export XAUTHORITY=$HOME/.Xauthority
+
+            if [ -f /opt/ros/humble/setup.bash ]; then
+              source /opt/ros/humble/setup.bash
+            fi
+
+            if [ -f /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash ]; then
+              source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash
+            fi
+          path: /home/ubuntu/.bashrc
+          append: true
+          defer: true
+
+        runcmd:
+        # Initialise rosdep
+        - rosdep init
+        - sudo -u ubuntu sh -c "rosdep update --rosdistro humble"
+
+        final_message: "The ROS 2 Humble environment is up, after $UPTIME seconds."
+
+
+health-check: |
+  set -e
+  colcon --help
+  rosdep --version
+  ls /etc/ros/rosdep/sources.list.d/20-default.list
+  ls /home/ubuntu/.ros/rosdep/sources.cache
+  ls /opt/ros/humble

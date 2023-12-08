@@ -1,0 +1,142 @@
+description: A development and testing environment for ROS 2 Humble.
+version: 0.1
+
+runs-on:
+- arm64
+- x86_64
+
+users: 
+  - default
+  - name: ubuntu
+    passwd: ubuntu
+    lock_passwd: false
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICVrhZ68Du4vwDS/WqN4tnoCMe4dZeNM4iF+RwMnOaUc han@MacHanPro.local
+
+package_update: true
+package_upgrade: true
+preserve_sources_list: true
+
+# apt:
+#   sources:
+#     ros2:
+#       - source: "deb [arch=arm64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu jammy main"
+#       - keyserver: https://raw.githubusercontent.com/ros/rosdistro/master/ros.key
+#       - key: /usr/share/keyrings/ros-archive-keyring.gpg
+#       - keyid: F42ED6FBAB17C654
+
+packages:
+# - build-essential
+- cmake
+- curl
+- git
+- lsb-release
+- openssh-client
+- openssh-server
+- python3
+- python3-pip
+- snapd
+- tig
+- unzip
+- vim
+- wget
+- zip
+# - net-tools
+# - xrdp
+# - ubuntu-desktop
+# ROS 2 specific packages
+# - ros-humble-desktop-full
+# - python3-colcon-common-extensions
+# - python3-rosdep
+# - python3-setuptools
+# - python3-vcstool
+
+snap:
+  commands:
+    - snap install snapcraft --classic
+    - snap install multipass-sshfs
+
+write_files:
+  - path: /home/ubuntu/.bashrc
+    content: |
+      [[ -z "${COLCON_HOME}" ]] && export COLCON_HOME="$HOME/.colcon"
+      [[ -z "${XAUTHORITY}" ]] && export XAUTHORITY=$HOME/.Xauthority
+      if [ -f /opt/ros/humble/setup.bash ]; then
+        source /opt/ros/humble/setup.bash
+      fi
+      if [ -f /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash ]; then
+        source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash
+      fi
+
+      # Proxy
+      if [[ ! -f /tmp/proxy_is_setup.flag && ! -f /tmp/proxy_is_not_setup.flag ]]; then
+        export proxy_response="$(ping 158.217.200.53 -w 1 | grep received | awk '{print $4}')"
+        if [[ "$proxy_response" != "0" ]]; then
+          # test
+          echo "proxy yes"
+          touch /tmp/proxy_is_setup.flag
+        else
+          # test
+          echo "proxy no"
+          touch /tmp/proxy_is_not_setup.flag
+        fi
+      fi
+      if [[ -f /tmp/proxy_is_setup.flag ]]; then
+        export http_proxy="http://proxy.itc.kansai-u.ac.jp:8080"
+        export https_proxy="http://proxy.itc.kansai-u.ac.jp:8080"
+        export ftp_proxy="http://proxy.itc.kansai-u.ac.jp:8080"
+        gsettings set org.gnome.system.proxy mode 'manual'
+        gsettings set org.gnome.system.proxy.http host 'http://proxy.itc.kansai-u.ac.jp'
+        gsettings set org.gnome.system.proxy.https host 'http://proxy.itc.kansai-u.ac.jp'
+        gsettings set org.gnome.system.proxy.http port 8080
+        gsettings set org.gnome.system.proxy.https port 8080
+      elif [[ -f /tmp/proxy_is_not_setup.flag ]]; then
+        unset http_proxy
+        unset https_proxy
+        unset ftp_proxy
+        gsettings set org.gnome.system.proxy mode 'none'
+      fi
+    append: true
+    defer: true
+
+  - path: /etc/apt/apt.conf.d/30proxy.conf
+    content: |
+      Acquire::http::proxy "${http_proxy}";
+      Acquire::https::proxy "${https_proxy}";
+      Acquire::ftp::proxy "${ftp_proxy}";
+      Acquire::Retries=3;      
+    append: true
+    defer: true
+  
+  - path: /home/ubuntu/.proxy_reset.sh
+    content: |
+      if [[ -f /tmp/proxy_is_setup.flag ]]; then
+          rm /tmp/proxy_is_setup.flag
+      elif [[ -f /tmp/proxy_is_not_setup.flag ]]; then
+          rm /tmp/proxy_is_not_setup.flag
+      fi
+      source ~/.bashrc    
+    append: true
+    defer: true
+
+runcmd:
+  # Initialise rosdep
+  # - bash
+  - sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+  - curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
+  - sudo apt update
+  - sudo apt upgrade -y
+  - sudo apt install build-essential net-tools -y
+  - sudo apt install xrdp ubuntu-desktop ros-noetic-desktop-full python3-rosdep python3-rosinstall python3-rosinstall-generator python3-wstool -y
+  - rosdep init
+  - sudo -u ubuntu sh -c "rosdep update --rosdistro humble"
+
+final_message: "The ROS Noetic environment is up, after $UPTIME seconds."
+
+health-check: |
+  set -e
+  colcon --help
+  rosdep --version
+  ls /etc/ros/rosdep/sources.list.d/20-default.list
+  ls /home/ubuntu/.ros/rosdep/sources.cache
+  ls /opt/ros/humble
